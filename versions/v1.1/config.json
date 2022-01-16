@@ -1,0 +1,46 @@
+{
+  "camera_position": {
+    "x": 0,
+    "y": 0,
+    "zoom": 1
+  },
+  "planets": [
+    {"mass": 400,
+      "pos": {
+        "x": -50,
+        "y": 0
+      },
+      "color": "red",
+      "vel": {
+        "dx": 0.01,
+        "dy": 0
+      }
+    },
+    {"mass": 400,
+      "pos": {
+        "x": 50,
+        "y": 0
+      },
+      "color": "yellow",
+      "vel": {
+        "dx": -0.01,
+        "dy": 0
+      }
+    },
+    {"mass": 0.1,
+      "pos": {
+        "x": 0,
+        "y": 0
+      },
+      "color": "#00FF00",
+      "vel": {
+        "dx": 0,
+        "dy": 0
+      }
+    }
+  ],
+  "other": {
+    "frame rate": 1,
+    "gravity const":  0.0001
+  }
+}
