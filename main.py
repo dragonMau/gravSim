@@ -10,15 +10,18 @@ from tkinter import Canvas, Label, Tk
 from sys import argv
 from json import loads
 
-try:
+#  load config from json
+try:  # open and read text from json file, and test for first argument
     with open(argv[1], "r") as tf:
         config = loads(tf.read())
 except IndexError:
     raise IndexError
 
+# configure max frame rate
 frame_rate = config["other"]["frame rate"]
 
 
+# make point data type
 class Point:
     x: float
     y: float
@@ -28,9 +31,12 @@ class Point:
         self.y = y
 
 
+# make Gravity calculator
 class Gravity:
+    # configure grav_const
     grav_const = config["other"]["gravity const"]
 
+    # method that takes distance and mass and returns gravity force
     def equation(self, dist=1.0, m1=1.0):
         if dist > 0:
             return (self.grav_const * m1) / dist ** 2
@@ -40,30 +46,32 @@ class Gravity:
             raise Exception(f"Impossible args: dist={dist}, m1={m1}.")
 
 
+# init Gravity calculator
 gravity = Gravity()
 
 
+# make vector data type
 class Vector:
     cos: float
     sin: float
     len: float
 
-    def init1(self, x: float, y: float):
-        self.len = (x ** 2 + y ** 2) ** (1 / 2)
-        if self.len != 0:
+    # creating vector
+    def __init__(self, point: Point):
+        x, y = point.x, point.y
+        self.len = (x ** 2 + y ** 2) ** (1 / 2)  # Pythagoras
+        try:  # a piece from trigonometry to configure direction
             self.cos = x / self.len
             self.sin = y / self.len
-        else:
+        except ZeroDivisionError:  # even math isn't perfect
             self.sin = 1
             self.cos = 1
 
-    def __init__(self, point: Point):
-        self.init1(point.x, point.y)
-
-    def get(self):
+    def get(self):  # ok
         return self.cos, self.sin, self.len
 
 
+#  this is shittiest piece of code
 class Display:
     canvas: Canvas
     label: Label
@@ -73,23 +81,23 @@ class Display:
     cam = None
     drag_pos = Point(0, 0)
 
-    def update_pos(self, event):
+    def update_pos(self, event):  # update label with position of mouse on map
         tx = self.cam.x + (event.x - 500) / self.cam.zoom
         ty = self.cam.y + (event.y - 250) / self.cam.zoom
         self.root.title(f"GravSim v1.1  x: {tx} y: {ty}")
 
-    def zoom_event(self, e):
+    def zoom_event(self, e):  # zooming(mouse wheel scrolling)
         self.cam.zoom *= 1.2 ** (e.delta / 120)
 
-    def move_start(self, event):
+    def move_start(self, event):  # remember mouse drag start position on map
         self.drag_pos = Point(self.cam.x - event.x / self.cam.zoom, self.cam.y - event.y / self.cam.zoom)
 
-    def move_cont(self, event):
+    def move_cont(self, event):  # change cam position by dragging mouse
         self.cam.x = event.x / self.cam.zoom + self.drag_pos.x
         self.cam.y = event.y / self.cam.zoom + self.drag_pos.y
         self.update_pos(event)
 
-    def __init__(self):
+    def __init__(self):  # tkinter sus
         self.root = Tk()
         self.root.title("GravSim v1.1  x: 0 y: 0")
         self.canvas = Canvas(self.root, width=1000, height=500, bg="#000022")
@@ -99,35 +107,52 @@ class Display:
         self.canvas.bind('<MouseWheel>', self.zoom_event)
         self.canvas.bind('<Motion>', self.update_pos)
 
+    # starting function
     def lp1(self, cam):
-        self.cam = cam
-        for b in range(len(self.bodies)):
+        self.cam = cam  # idk, copy cam to self class
+        for b in range(len(self.bodies)):  # draw all bodies by ovals
             body = self.bodies[b]
             r = 0
-            self.bodies[b].tag = self.canvas.create_oval(body.tag, body.pos.x - r, body.pos.y - r, body.pos.x + r,
-                                                         body.pos.y + r, fill=self.bodies[b].color)
+            self.bodies[b].tag = self.canvas.create_oval(  # and give them their tag/uid
+                body.tag,
+                body.pos.x - r,
+                body.pos.y - r,
+                body.pos.x + r,
+                body.pos.y + r,
+                fill=self.bodies[b].color
+            )
         self.root.after(10, self.lp)
         self.root.mainloop()
 
+    # main loop function
     def lp(self):
-        for b in range(len(self.bodies)):
+        for b in range(len(self.bodies)):  # for each body
             body = self.bodies[b]
-            r = (body.mass ** 0.333) * 2 * self.cam.zoom
-            tx = (body.pos.x + self.cam.x) * self.cam.zoom + 500
+            r = (body.mass ** 0.333) * 2 * self.cam.zoom  # calculate bodies radius
+
+            # graphics part
+            tx = (body.pos.x + self.cam.x) * self.cam.zoom + 500  # calculate its position on screen
             ty = (body.pos.y + self.cam.y) * self.cam.zoom + 250
-            self.canvas.coords(body.tag, tx - r, ty - r, tx + r, ty + r)
-            self.bodies[b].move()
-            for p1 in self.bodies:
-                v = Vector(Point(body.pos.y - p1.pos.y, body.pos.x - p1.pos.x))
-                f = gravity.equation(v.len, p1.mass)
-                self.bodies[b].accelerate(Vector(Point(v.cos * f, v.sin * f)))
-        self.root.after(frame_rate, self.lp)  # frame rate control
+            self.canvas.coords(body.tag, tx - r, ty - r, tx + r, ty + r)  # update its position on screen
+
+            # physics part
+            self.bodies[b].move()  # move it
+            vector = Vector(Point(0, 0))
+            for p1 in self.bodies:  # sum every force that pulls/pushes the body
+                direction = Vector(Point(body.pos.y - p1.pos.y, body.pos.x - p1.pos.x))  # direction
+                direction.len = gravity.equation(direction.len, p1.mass)  # force
+                vector = add_v(vector, direction)
+            self.bodies[b].accelerate(vector)  # add to its velocity vector
+
+        self.root.after(frame_rate, self.lp)  # loop main loop
 
 
+# method to add vectors together, yea, maybe batter it will be on vector class, but...
 def add_v(v1: Vector, v2: Vector):
     return Vector(Point((v1.cos * v1.len + v2.cos * v2.len), (v1.sin * v1.len + v2.sin * v2.len)))
 
 
+# make body data type
 class Body:
     mass: float
     pos: Point
@@ -153,20 +178,24 @@ class Body:
 
 
 class Main:
-    x = config["camera_position"]["x"]
-    y = config["camera_position"]["y"]
-    zoom = config["camera_position"]["zoom"]
+    x: float
+    y: float
+    zoom: float
 
-    def __init__(self):
+    def __init__(self):  # load other configurations
+        self.x = float(config["camera_position"]["x"])
+        self.y = float(config["camera_position"]["y"])
+        self.zoom = float(config["camera_position"]["zoom"])
+
         self.disp = Display()
-        for planet in config["planets"]:
+        for planet in config["planets"]:  # append all planets
             self.disp.bodies.append(Body(
                 mass=planet["mass"],
                 pos=Point(planet["pos"]["x"], planet["pos"]["y"]),
                 color=planet["color"],
                 vel=Vector(Point(planet["vel"]["dx"], planet["vel"]["dy"])))
             )
-        self.disp.lp1(self)
+        self.disp.lp1(self)  # start
 
 
 if __name__ == '__main__':
