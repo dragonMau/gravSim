@@ -9,13 +9,28 @@ author: DisFunSec
 from tkinter import Canvas, Label, Tk
 from sys import argv
 from json import loads
+from os.path import isdir, isfile
+from os import listdir
 
 #  load config from json
-try:  # open and read text from json file, and test for first argument
+if len(argv) > 1:
+    if isfile(argv[1]):
+        with open(argv[1], "r") as tf:
+            config = loads(tf.read())  # any file by given path
+    elif isdir(argv[1]):
+        files = [file for file in listdir(argv[1]) if isfile(file)]
+        if "config.json" in files:
+            with open(argv[1], "r") as tf:
+                config = loads(tf.read())  # 'config.json' on given directory
+        else:
+            raise Exception(f"not found \"config.json\" in \"{argv[1]}\"")
+    else:
+        raise Exception(f"invalid path \"{argv[1]}\"")
+elif isfile("./config.json"):
     with open(argv[1], "r") as tf:
-        config = loads(tf.read())
-except IndexError:
-    raise IndexError
+        config = loads(tf.read())  # default configuration
+else:
+    raise Exception("not found \"config.json\"")
 
 # configure max frame rate
 frame_rate = config["other"]["frame rate"]
