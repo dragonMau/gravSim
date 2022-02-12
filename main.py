@@ -3,14 +3,16 @@ Gravity Simulator
 description: It represents Newton's law of universal gravitation by
 simulating some planets and using his equation on them.
 
-version: 1.4 - beta
+version: 1.5 - beta
 author: DisFunSec
 """
+import time
 from tkinter import Canvas, Label, Tk
 from sys import argv
 from json import loads
 from os.path import isdir, isfile
 from os import listdir
+from threading import Thread
 
 
 # make point data type
@@ -21,6 +23,13 @@ class Point:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+
+    def get_from(self, p):
+        self.x = p.x
+        self.y = p.y
+
+    def __mul__(self, num: int or float):
+        return Point(self.x * num, self.y * num)
 
 
 # make Gravity calculator
@@ -74,6 +83,10 @@ class Vector:
     def __add__(self, v2):
         return Vector(Point((self.get("x") + v2.get("x")), (self.get("y") + v2.get("y"))))
 
+    def __mul__(self, other):
+        if type(other) in (int, float):
+            return Vector(Point(self.len * self.cos * other, self.len * self.sin * other))
+
 
 class Display:
     canvas: Canvas
@@ -83,41 +96,96 @@ class Display:
     drawn_bodies = []
     cam = None
     drag_pos = Point(0, 0)
+    enabled = True
+    hooked_planet = None
+    loop1: Thread
+    mouse_pos = Point(0, 0)
+    delta_t = 0
+    fullscreen = 0
 
-    def update_pos(self, event):  # update label with position of mouse on map
-        tx = self.cam.x + (event.x - 500) / self.cam.zoom
-        ty = self.cam.y + (event.y - 250) / self.cam.zoom
-        self.root.title(f"GravSim v1.4  x: {tx} y: {ty}")
+    def hook(self, event):
+        tx = (event.x - self.canvas.winfo_width() / 2) / self.cam.zoom - self.cam.pos.x
+        ty = self.cam.pos.y - (event.y - self.canvas.winfo_height() / 2) / self.cam.zoom
+        for planet in self.bodies:
+            dist = Vector(Point(tx - planet.pos.x, ty - planet.pos.y)).len
+            if dist < planet.r:
+                self.hooked_planet = planet.tag - 1
+                return
+        self.hooked_planet = None
+
+    def toggle_pause(self):
+        self.delta_t = 1 - self.delta_t
+        if not self.delta_t:
+            self.pause_label.place(x="15", y="15", anchor="nw")
+        else:
+            self.pause_label.place_forget()
+
+    def toggle_fullscreen(self):
+        self.fullscreen = 1 - self.fullscreen
+        self.root.attributes("-fullscreen", self.fullscreen)
+
+    def keyboard_interrupt(self, e):
+        if e.keysym == "Escape":
+            self.toggle_pause()
+        elif e.keysym == "F11":
+            self.toggle_fullscreen()
+        # else: print(e)
+
+    def stop(self):
+        self.enabled = False
+        self.root.destroy()
+
+    def update_mouse_pos(self, event):
+        self.mouse_pos = Point(event.x, event.y)
+        self.update_title()
+
+    def update_title(self):  # update label with position of mouse on map
+        tx = (self.mouse_pos.x - self.canvas.winfo_width() / 2) / self.cam.zoom - self.cam.pos.x
+        ty = self.cam.pos.y - (self.mouse_pos.y - self.canvas.winfo_height() / 2) / self.cam.zoom
+        self.root.title(f"GravSim v1.5  x: {round(tx, 2)} y: {round(ty, 2)}," +
+                        f" cam(x: {round(self.cam.pos.x, 2)} y: {round(self.cam.pos.y, 2)})")
 
     def zoom_event(self, e):  # zooming(mouse wheel scrolling)
         self.cam.zoom *= 1.2 ** (e.delta / 120)
 
     def move_start(self, event):  # remember mouse drag start position on map
-        self.drag_pos = Point(self.cam.x - event.x / self.cam.zoom, self.cam.y - event.y / self.cam.zoom)
+        self.drag_pos = Point(self.cam.pos.x - event.x / self.cam.zoom,
+                              self.cam.pos.y - event.y / self.cam.zoom)
 
     def move_cont(self, event):  # change cam position by dragging mouse
-        self.cam.x = event.x / self.cam.zoom + self.drag_pos.x
-        self.cam.y = event.y / self.cam.zoom + self.drag_pos.y
-        self.update_pos(event)
+        if self.hooked_planet is None:
+            self.cam.pos.x = self.drag_pos.x + event.x / self.cam.zoom
+            self.cam.pos.y = self.drag_pos.y + event.y / self.cam.zoom
+            self.update_mouse_pos(event)
 
     def __init__(self, frame_rate):  # tkinter sus
         self.root = Tk()
-        self.root.title("GravSim v1.4  x: 0 y: 0")
-        self.canvas = Canvas(self.root, width=1000, height=500, bg="#000022")
-        self.canvas.pack()
+        self.root.title("GravSim v1.5  x: 0 y: 0")
+
+        self.canvas = Canvas(self.root, bg="#000022")
+        self.canvas.pack(fill="both", expand=True)
+        self.pause_label = Label(self.canvas, text="Paused", width="20", height="2", anchor="center")
+        self.pause_label.place(x="15", y="15", anchor="nw")
+
         self.canvas.bind('<Button-1>', self.move_start)
         self.canvas.bind('<B1-Motion>', self.move_cont)
         self.canvas.bind('<MouseWheel>', self.zoom_event)
-        self.canvas.bind('<Motion>', self.update_pos)
+        self.canvas.bind('<Motion>', self.update_mouse_pos)
+        self.canvas.bind('<Double-Button-1>', self.hook)
+        self.root.bind('<Key>', self.keyboard_interrupt)
         self.frame_rate = frame_rate
+        self.root.protocol("WM_DELETE_WINDOW", lambda: self.stop())
+
+        self.root.geometry("1000x500")
+        self.root.update()
 
     # starting function
     def lp1(self, cam):
-        self.cam = cam  # idk, copy cam to self class
-        for b in range(len(self.bodies)):  # draw all bodies by ovals
+        self.cam = cam
+        for b in range(len(self.bodies)):
             body = self.bodies[b]
             r = 0
-            self.bodies[b].tag = self.canvas.create_oval(  # and give them their tag/uid
+            self.bodies[b].tag = self.canvas.create_oval(
                 body.tag,
                 body.pos.x - r,
                 body.pos.y - r,
@@ -125,31 +193,37 @@ class Display:
                 body.pos.y + r,
                 fill=self.bodies[b].color
             )
-        self.root.after(10, self.lp)
-        self.root.mainloop()
+        self.update_phys()
 
-    # main loop function
-    def lp(self):
+    def update_graph(self):
+        if self.hooked_planet is not None:
+            self.cam.pos.get_from(self.bodies[self.hooked_planet].pos * -1)
+            self.update_title()
         for b in range(len(self.bodies)):  # for each body
             body = self.bodies[b]
-            r = (body.mass ** 0.333) * 2 * self.cam.zoom  # calculate bodies radius
+            r = body.r * self.cam.zoom
+            tx = (body.pos.x + self.cam.pos.x) * self.cam.zoom + self.canvas.winfo_width() / 2
+            ty = (- body.pos.y + self.cam.pos.y) * self.cam.zoom + self.canvas.winfo_height() / 2
+            self.canvas.coords(body.tag, tx - r, ty - r, tx + r, ty + r)
+        self.root.update()
 
-            # graphics part
-            tx = (body.pos.x + self.cam.x) * self.cam.zoom + 500  # calculate its position on screen
-            ty = (body.pos.y + self.cam.y) * self.cam.zoom + 250
-            self.canvas.coords(body.tag, tx - r, ty - r, tx + r, ty + r)  # update its position on screen
-
-            # physics part
-            self.bodies[b].move()  # move it
-            vector = Vector(Point(0, 0))
-            for p1 in self.bodies:  # sum every force that pulls/pushes the body
-                direction = Vector(Point(body.pos.x - p1.pos.x, body.pos.y - p1.pos.y))  # direction
-                direction.len = Gravity.equation(direction.len, p1.mass)  # force
-                vector += direction
-            self.bodies[b].accelerate(vector)  # add to its velocity vector
-
-        # input()
-        self.root.after(self.frame_rate, self.lp)  # loop main loop
+    def update_phys(self):  # mainloop
+        t_0 = time.time()
+        while self.enabled:
+            while time.time() - t_0 < self.frame_rate:
+                self.update_graph()
+            t_0 = time.time()
+            for b in range(len(self.bodies)):
+                body = self.bodies[b]
+                self.bodies[b].r = (body.mass ** 0.333) * 2
+                self.bodies[b].move(self.delta_t)  # move it
+                vector = Vector(Point(0, 0))
+                for p1 in self.bodies:  # sum every force that pulls/pushes the body
+                    direction = Vector(Point(body.pos.x - p1.pos.x, body.pos.y - p1.pos.y))  # direction
+                    if direction.len > (body.r + p1.r):
+                        direction.len = Gravity.equation(direction.len, p1.mass)  # force
+                        vector += direction
+                self.bodies[b].accelerate(vector, self.delta_t)  # add to its velocity vector
 
 
 # make body data type
@@ -159,6 +233,7 @@ class Body:
     vel: Vector
     color: str
     tag = None
+    r = 1
 
     def __init__(self, mass: int or float, pos: Point, vel: Vector = Vector(Point(0, 0)), color: str = "#FFFFFF"):
         self.mass = mass
@@ -169,18 +244,16 @@ class Body:
     def get(self):
         return self.mass, self.vel, self.pos
 
-    def move(self):
-        self.pos.y -= self.vel.get("y")
-        self.pos.x -= self.vel.get("x")
+    def move(self, dt):
+        self.pos.y -= self.vel.get("y") * dt
+        self.pos.x -= self.vel.get("x") * dt
 
-    def accelerate(self, force_v: Vector):
-        self.vel = self.vel + force_v
-        # print(self.tag, force_v.get("x", "y"))
+    def accelerate(self, force_v: Vector, dt):
+        self.vel = self.vel + force_v * dt
 
 
 class Main:
-    x: float
-    y: float
+    pos = Point(0, 0)
     zoom: float
 
     @staticmethod
@@ -208,12 +281,13 @@ class Main:
     def __init__(self):  # load other configurations
         self.config = self.load_config()
 
-        self.x = float(self.config["camera_position"]["x"])
-        self.y = float(self.config["camera_position"]["y"])
+        self.pos.x = float(self.config["camera_position"]["x"])
+        self.pos.y = float(self.config["camera_position"]["y"])
         self.zoom = float(self.config["camera_position"]["zoom"])
 
         Gravity.grav_const = self.config["other"]["gravity const"]
-        self.disp = Display(self.config["other"]["frame rate"])
+
+        self.disp = Display(1 / self.config["other"]["frame rate"])
         for planet in self.config["planets"]:  # append all planets
             self.disp.bodies.append(Body(
                 mass=planet["mass"],
@@ -221,10 +295,8 @@ class Main:
                 color=planet["color"],
                 vel=Vector(Point(planet["vel"]["dx"], planet["vel"]["dy"])))
             )
-
-    def start(self):
         self.disp.lp1(self)  # start
 
 
 if __name__ == '__main__':
-    Main().start()
+    Main()
