@@ -3,16 +3,18 @@ Gravity Simulator
 description: It represents Newton's law of universal gravitation by
 simulating some planets and using his equation on them.
 
-version: 1.5 - beta
+version: 1.6 - beta
 author: DisFunSec
 """
 import time
-from tkinter import Canvas, Label, Tk
+from math import pi
+from tkinter import Canvas, Label, Tk, StringVar
 from sys import argv
 from json import loads
 from os.path import isdir, isfile
 from os import listdir
 from threading import Thread
+from vector import Vector
 
 
 # make point data type
@@ -26,7 +28,7 @@ class Point:
 
     def get_from(self, p):
         self.x = p.x
-        self.y = p.y
+        self.y = -p.y
 
     def __mul__(self, num: int or float):
         return Point(self.x * num, self.y * num)
@@ -38,54 +40,38 @@ class Gravity:
 
     # method that takes distance and mass and returns gravity force
     @staticmethod
-    def equation(dist=1.0, m1=1.0):
-        if dist > 0:
-            return (Gravity.grav_const * m1) / dist ** 2
-        elif dist == 0:
+    def equation(dist=1.0, b1=None, b2=None):
+        if b1.tag == b2.tag:
             return 0
-        else:
-            raise Exception(f"Impossible args: dist={dist}, m1={m1}.")
+        force = 0
+        fg = 0
+        if dist > 0:
+            fg = (Gravity.grav_const * b2.mass * b1.mass) / dist ** 2
+        force += fg
 
+        v = Gravity.sphere_overlap(b1.r, b2.r, dist)
+        c = ((b2.p * fg/b1.mass * v) + (b1.p * fg/b2.mass * v))/2
+        force -= c
 
-# make vector data type
-class Vector:
-    cos: float
-    sin: float
-    len: float
+        a = force/b1.mass
+        # print(b1.color, c, fg, force, a)
+        return a
 
-    # creating vector
-    def __init__(self, point: Point):
-        x, y = point.x, point.y
-        self.len = (x ** 2 + y ** 2) ** (1 / 2)  # Pythagoras
-        try:  # a piece from trigonometry to configure direction
-            self.cos = x / self.len
-            self.sin = y / self.len
-        except ZeroDivisionError:  # even math isn't perfect
-            self.sin = 0
-            self.cos = 1
+    @staticmethod
+    def sphere_overlap(r1, r2, d):
+        pm1 = r1 - ((r1 ** 2 - r2 ** 2) / (2 * d) + d / 2)
+        pm2 = (r1 ** 2 - r2 ** 2) / (2 * d) + d / 2 - (d - r2)
+        return Gravity.sphere_segment(r1, pm1) + Gravity.sphere_segment(r2, pm2)
 
-    def get(self, *whats):  # ok
-        if whats == ():
-            return self.cos, self.sin, self.len
-        else:
-            return_ = ()
-            for what in whats:
-                if what in ["sin", "cos", "len"]:
-                    return_ += (self.__getattribute__(what),)
-                elif what == "x":
-                    return_ += (self.cos * self.len,)
-                elif what == "y":
-                    return_ += (self.sin * self.len,)
-            if len(return_) == 1:
-                return return_[0]
-            return return_
-
-    def __add__(self, v2):
-        return Vector(Point((self.get("x") + v2.get("x")), (self.get("y") + v2.get("y"))))
-
-    def __mul__(self, other):
-        if type(other) in (int, float):
-            return Vector(Point(self.len * self.cos * other, self.len * self.sin * other))
+    @staticmethod
+    def sphere_segment(r, h=""):
+        if h == "":
+            h = 2 * r
+        if h > 2 * r:
+            h = 2 * r
+        if h < 0:
+            h = 0
+        return pi * h ** 2 * (r - h / 3)
 
 
 class Display:
@@ -102,19 +88,20 @@ class Display:
     mouse_pos = Point(0, 0)
     delta_t = 0
     fullscreen = 0
+    info: StringVar
 
     def hook(self, event):
         tx = (event.x - self.canvas.winfo_width() / 2) / self.cam.zoom - self.cam.pos.x
         ty = self.cam.pos.y - (event.y - self.canvas.winfo_height() / 2) / self.cam.zoom
         for planet in self.bodies:
-            dist = Vector(Point(tx - planet.pos.x, ty - planet.pos.y)).len
+            dist = Vector(tx - planet.pos.x, ty - planet.pos.y).len
             if dist < planet.r:
                 self.hooked_planet = planet.tag - 1
                 return
         self.hooked_planet = None
 
     def toggle_pause(self):
-        self.delta_t = 1 - self.delta_t
+        self.delta_t = self.frame_rate - self.delta_t
         if not self.delta_t:
             self.pause_label.place(x="15", y="15", anchor="nw")
         else:
@@ -142,11 +129,11 @@ class Display:
     def update_title(self):  # update label with position of mouse on map
         tx = (self.mouse_pos.x - self.canvas.winfo_width() / 2) / self.cam.zoom - self.cam.pos.x
         ty = self.cam.pos.y - (self.mouse_pos.y - self.canvas.winfo_height() / 2) / self.cam.zoom
-        self.root.title(f"GravSim v1.5  x: {round(tx, 2)} y: {round(ty, 2)}," +
-                        f" cam(x: {round(self.cam.pos.x, 2)} y: {round(self.cam.pos.y, 2)})")
+        self.info.set(f"x: {tx}\ny: {ty}")
 
     def zoom_event(self, e):  # zooming(mouse wheel scrolling)
-        self.cam.zoom *= 1.2 ** (e.delta / 120)
+        self.cam.zoom *= 10 ** (e.delta / 120 / 10)
+        self.update_title()
 
     def move_start(self, event):  # remember mouse drag start position on map
         self.drag_pos = Point(self.cam.pos.x - event.x / self.cam.zoom,
@@ -160,12 +147,17 @@ class Display:
 
     def __init__(self, frame_rate):  # tkinter sus
         self.root = Tk()
-        self.root.title("GravSim v1.5  x: 0 y: 0")
+        self.root.title("GravSim v1.6")
 
         self.canvas = Canvas(self.root, bg="#000022")
         self.canvas.pack(fill="both", expand=True)
-        self.pause_label = Label(self.canvas, text="Paused", width="20", height="2", anchor="center")
-        self.pause_label.place(x="15", y="15", anchor="nw")
+        self.pause_label = Label(self.canvas, text="Paused", width=20, height=2)
+        self.pause_label.place(x=15, y=15, anchor="nw")
+
+        self.info = StringVar()
+        self.info_label = Label(self.canvas, textvariable=self.info, width="20", height="2", bg="#0a0a44", anchor="w",
+                                fg="white")
+        self.info_label.place(relx=1.0, x=-15, y=15, anchor="ne")
 
         self.canvas.bind('<Button-1>', self.move_start)
         self.canvas.bind('<B1-Motion>', self.move_cont)
@@ -213,17 +205,16 @@ class Display:
             while time.time() - t_0 < self.frame_rate:
                 self.update_graph()
             t_0 = time.time()
-            for b in range(len(self.bodies)):
-                body = self.bodies[b]
-                self.bodies[b].r = (body.mass ** 0.333) * 2
-                self.bodies[b].move(self.delta_t)  # move it
-                vector = Vector(Point(0, 0))
+            for body in self.bodies:
+                body.r = ((body.mass / body.p) * 0.75 * pi) ** (1/3)
+                vector = Vector(0, 0)
                 for p1 in self.bodies:  # sum every force that pulls/pushes the body
-                    direction = Vector(Point(body.pos.x - p1.pos.x, body.pos.y - p1.pos.y))  # direction
-                    if direction.len > (body.r + p1.r):
-                        direction.len = Gravity.equation(direction.len, p1.mass)  # force
-                        vector += direction
-                self.bodies[b].accelerate(vector, self.delta_t)  # add to its velocity vector
+                    direction = Vector(body.pos.x - p1.pos.x, body.pos.y - p1.pos.y)  # direction
+                    direction.len = Gravity.equation(direction.len, body, p1)  # force
+                    vector += direction
+                body.accelerate(vector, self.delta_t)  # add to its velocity vector
+            for b in self.bodies:
+                b.move(self.delta_t)  # move it
 
 
 # make body data type
@@ -234,19 +225,21 @@ class Body:
     color: str
     tag = None
     r = 1
+    p = 5520
 
-    def __init__(self, mass: int or float, pos: Point, vel: Vector = Vector(Point(0, 0)), color: str = "#FFFFFF"):
+    def __init__(self, mass: int or float, pos: Point, vel: Vector = Vector(0, 0), color: str = "#FFFFFF", p=1):
         self.mass = mass
         self.pos = pos
         self.vel = vel
         self.color = color
+        self.p = p
 
     def get(self):
         return self.mass, self.vel, self.pos
 
     def move(self, dt):
-        self.pos.y -= self.vel.get("y") * dt
-        self.pos.x -= self.vel.get("x") * dt
+        self.pos.y -= self.vel.y() * dt
+        self.pos.x -= self.vel.x() * dt
 
     def accelerate(self, force_v: Vector, dt):
         self.vel = self.vel + force_v * dt
@@ -293,8 +286,9 @@ class Main:
                 mass=planet["mass"],
                 pos=Point(planet["pos"]["x"], planet["pos"]["y"]),
                 color=planet["color"],
-                vel=Vector(Point(planet["vel"]["dx"], planet["vel"]["dy"])))
-            )
+                vel=Vector(planet["vel"]["dx"], planet["vel"]["dy"]),
+                p=(planet["p"])
+            ))
         self.disp.lp1(self)  # start
 
 

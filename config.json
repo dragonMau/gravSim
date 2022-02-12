@@ -2,34 +2,36 @@
   "camera_position": {
     "x": 0,
     "y": 0,
-    "zoom": 1
+    "zoom": 20
   },
   "planets": [
-    {"mass": 400,
+    {"mass": 600000000000000000000000,
       "pos": {
-        "x": 50,
-        "y": 0
+        "x": 0,
+        "y": -6350497.8
       },
-      "color": "red",
+      "color": "cyan",
       "vel": {
         "dx": 0,
         "dy": 0
-      }
+      },
+      "p": 5520
     },
-    {"mass": 100,
+    {"mass": 1,
       "pos": {
         "x": 0,
-        "y": 0
+        "y": 10.6
       },
       "color": "green",
       "vel": {
         "dx": 0,
         "dy": 0
-      }
+      },
+      "p": 100000
     }
     ],
   "other": {
     "frame rate": 60,
-    "gravity const":  0.1
+    "gravity const":  0.000000000667408
   }
 }
