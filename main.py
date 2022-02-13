@@ -50,7 +50,7 @@ class Gravity:
         force += fg
 
         v = Gravity.sphere_overlap(b1.r, b2.r, dist)
-        c = ((b2.p * fg/b1.mass * v) + (b1.p * fg/b2.mass * v))/2
+        c = ((b2.p * fg/b1.mass * v) + (b1.p * fg/b2.mass * v))/4
         force -= c
 
         a = force/b1.mass
