@@ -265,7 +265,7 @@ class Main:
             else:
                 raise Exception(f"invalid path \"{argv[1]}\"")
         elif isfile("./config.json"):
-            with open(argv[1], "r") as tf:
+            with open("./config.json", "r") as tf:
                 config = loads(tf.read())  # default configuration
         else:
             raise Exception("not found \"config.json\"")
